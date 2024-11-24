@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "build": "node_modules/.bin/esbuild --target=es2019 ./src/index.jsx --bundle --platform=node --outfile=index.js",
+    "build": "npx esbuild --target=es2019 ./src/index.jsx --bundle --platform=node --outfile=dist/index.js",
     "prepare": "husky install",
     "typecheck": "yarn run tsc --noEmit --allowJs",
     "test:jest": "jest",

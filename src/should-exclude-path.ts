@@ -10,17 +10,33 @@ export const shouldExcludePath = (
   globsToIgnore: string[]
 ): boolean => {
   if (!path) return false;
+  
+  const processedPath = processPath(path);
 
-  return (
-    pathsToIgnore.has(path) ||
-    globsToIgnore.some(
-      (glob) =>
-        glob &&
-        isMatch(processPath(path), glob, {
-          dot: true,
-        })
-    )
-  );
+  // Check for direct .aider files first
+  if (processedPath.startsWith('.aider')) {
+    return true;
+  }
+
+  // Check exact paths
+  if (pathsToIgnore.has(processedPath)) {
+    return true;
+  }
+
+  // Check glob patterns
+  return globsToIgnore.some(glob => {
+    if (!glob) return false;
+    
+    // Special handling for .aider* patterns
+    if (glob === '.aider*' || glob === './.aider*' || glob === '**/.aider*') {
+      return processedPath.startsWith('.aider');
+    }
+    
+    return isMatch(processedPath, glob, {
+      dot: true,
+      matchBase: true
+    });
+  });
 };
 
 const processPath = (path: string): string => {

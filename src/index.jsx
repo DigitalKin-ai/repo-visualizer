@@ -4,6 +4,7 @@ import * as artifact from '@actions/artifact'
 import React from 'react';
 import ReactDOMServer from 'react-dom/server';
 import fs from "fs"
+import path from "path"
 
 import { processDir } from "./process-dir.js"
 import { Tree } from "./Tree.tsx"
@@ -11,6 +12,83 @@ import { Tree } from "./Tree.tsx"
 const main = async () => {
   core.info('[INFO] Usage https://github.com/githubocto/repo-visualizer#readme')
 
+  // Load default config
+  let config = {
+    root_path: "",
+    max_depth: 9,
+    file_colors: {},
+    color_encoding: "type", 
+    commit_message: "Repo visualizer: update diagram",
+    excluded_paths: [
+      "node_modules",
+      "dist",
+      "build", 
+      "coverage",
+      ".git",
+      ".pytest_cache",
+      ".hypothesis",
+      ".idea",
+      ".vscode",
+      ".env",
+      ".venv",
+      "env",
+      "venv",
+      "aider",
+      "repo-visualizer"
+    ],
+    excluded_globs: [
+      ".aider*",
+      "./.aider*",
+      "**/.aider*",
+      "**/__pycache__/**/*",
+      "**/*.pyc",
+      "**/*.pyo",
+      "**/*.pyd",
+      "**/*.so",
+      "**/*.dll",
+      "**/*.dylib",
+      "**/.DS_Store",
+      "**/Thumbs.db",
+      "**/desktop.ini",
+      "**/*.log",
+      "**/*.cache",
+      "**/*.bak",
+      "**/*.swp",
+      "**/*.tmp",
+      "**/*.temp",
+      "**/*~",
+      "**/.env",
+      "**/.env.*",
+      "**/*.local",
+      "**/.coverage",
+      "**/*.egg-info",
+      "**/*.egg",
+      "**/*.whl",
+      "**/*.manifest",
+      "**/.history/**/*",
+      "**/.venv/**/*",
+      "**/dist/**/*",
+      "**/build/**/*",
+      "**/.next/**/*",
+      "**/coverage/**/*",
+      "**/.nyc_output/**/*",
+      "**/node_modules/**/*",
+      "**/.yarn/**/*"
+    ]
+  }
+
+  // Try to load config file
+  try {
+    const configPath = path.join(process.cwd(), '.repo-visualizer.json')
+    if (fs.existsSync(configPath)) {
+      const fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+      config = { ...config, ...fileConfig }
+    }
+  } catch (err) {
+    core.warning('Error loading .repo-visualizer.json config file, using defaults')
+  }
+
+  // Override with GitHub Actions inputs if provided
   core.startGroup('Configuration')
   const username = 'repo-visualizer'
   await exec('git', ['config', 'user.name', username])
@@ -20,20 +98,23 @@ const main = async () => {
     `${username}@users.noreply.github.com`,
   ])
 
+  const rootPath = core.getInput("root_path") || config.root_path
+  const maxDepth = core.getInput("max_depth") || config.max_depth
+  const customFileColors = JSON.parse(core.getInput("file_colors") || JSON.stringify(config.file_colors))
+  const colorEncoding = core.getInput("color_encoding") || config.color_encoding
+  const commitMessage = core.getInput("commit_message") || config.commit_message
+  
+  const excludedPathsString = core.getInput("excluded_paths")
+  const excludedPaths = excludedPathsString ? 
+    excludedPathsString.split(",").map(str => str.trim()) :
+    config.excluded_paths
+
+  const excludedGlobsString = core.getInput('excluded_globs')
+  const excludedGlobs = excludedGlobsString ? 
+    excludedGlobsString.split(";") :
+    config.excluded_globs
+
   core.endGroup()
-
-
-  const rootPath = core.getInput("root_path") || ""; // Micro and minimatch do not support paths starting with ./
-  const maxDepth = core.getInput("max_depth") || 9
-  const customFileColors = JSON.parse(core.getInput("file_colors") ||  '{}');
-  const colorEncoding = core.getInput("color_encoding") || "type"
-  const commitMessage = core.getInput("commit_message") || "Repo visualizer: update diagram"
-  const excludedPathsString = core.getInput("excluded_paths") || "node_modules,bower_components,dist,out,build,eject,.next,.netlify,.yarn,.git,.vscode,package-lock.json,yarn.lock"
-  const excludedPaths = excludedPathsString.split(",").map(str => str.trim())
-
-  // Split on semicolons instead of commas since ',' are allowed in globs, but ';' are not + are not permitted in file/folder names.
-  const excludedGlobsString = core.getInput('excluded_globs') || '';
-  const excludedGlobs = excludedGlobsString.split(";");
 
   const branch = core.getInput("branch")
   const data = await processDir(rootPath, excludedPaths, excludedGlobs);
@@ -70,9 +151,15 @@ const main = async () => {
     return
   }
 
-  const shouldPush = core.getBooleanInput('should_push')
+  const shouldPush = (() => {
+    const input = core.getInput('should_push')
+    if (!input) return false
+    // Normalize various boolean string representations
+    const normalized = input.toString().toLowerCase().trim()
+    return ['true', 't', 'yes', 'y', '1'].includes(normalized)
+  })()
   if (shouldPush) {
-    core.startGroup('Commit and push diagram')
+    core.startGroup('Commit and push diagram') 
     await exec('git', ['commit', '-m', commitMessage])
 
     if (doesBranchExist) {
